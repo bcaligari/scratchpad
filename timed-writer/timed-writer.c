@@ -41,9 +41,9 @@ int line_writer(const char *filename, unsigned int interval) {
     ssize_t written, ws;
     int _errno;
     int fd;
-    struct timeval time_before;
-    struct timeval time_after;
-    double time_delta;
+    struct timeval wall_clock_before;
+    struct timeval wall_clock_after;
+    double wall_clock_delta;
     if ((fd = open(filename, O_WRONLY|O_CREAT|O_TRUNC|O_SYNC, (mode_t) 0666)) == -1) {
         _errno = errno;
         fprintf(stderr, "Unable to open %s : open(2) returned %d (%s)\n",
@@ -56,22 +56,22 @@ int line_writer(const char *filename, unsigned int interval) {
         printf("Writing sequence %d\n", iter);
         sprintf(str_buf, "%d\n", iter);
         str_len = strlen(str_buf);
-        gettimeofday(&time_before, NULL);
+        gettimeofday(&wall_clock_before, NULL);
         ws = write(fd, str_buf, str_len);
+        _errno = errno;
         if ((ws == -1) || (ws != (ssize_t) str_len)) {
-            _errno = errno;
             fprintf(stderr, "write(2) returned %d (%s)\n",
                 filename,
                 _errno,
                 strerror(_errno));
         }
-        gettimeofday(&time_after, NULL);
+        gettimeofday(&wall_clock_after, NULL);
         if (ws != (ssize_t) str_len)
             printf("Wrote %d instead of %d!!\n", (int) ws, (int) str_len);
-        time_delta = 
-            ((double) time_after.tv_sec + ((double) time_after.tv_usec / 1000000)) -
-            ((double) time_before.tv_sec + ((double) time_before.tv_usec / 1000000));
-        printf("write(2) took aprox %.1lf seconds\n", time_delta);
+        wall_clock_delta = 
+            ((double) wall_clock_after.tv_sec + ((double) wall_clock_after.tv_usec / 1000000)) -
+            ((double) wall_clock_before.tv_sec + ((double) wall_clock_before.tv_usec / 1000000));
+        printf("write(2) took approx %.1lf seconds\n", wall_clock_delta);
         sleep(interval);
     }
     close(fd);
