@@ -5,6 +5,10 @@
 
     License: GNU Affero General Public License
         https://www.gnu.org/licenses/agpl-3.0.en.html
+
+    TODO:
+        - signal handling for termination
+        - configurable 
 */
 
 #include <stdio.h>
@@ -14,11 +18,14 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/time.h>
+#include <sys/times.h>
+#include <limits.h>
+#include <time.h>
 
 #define INTERVAL_DEFAULT    5
 #define INTERVAL_MIN        1
 #define INTERVAL_MAX        60*60
-#define ITERATION_MAX       666             // safety bailout
+#define ITERATION_MAX       666             // arbitrary safety bailout
 #define BUF_MAX             1024
 
 void fail_bad_args(char *progname) {
@@ -44,24 +51,31 @@ int line_writer(const char *filename, unsigned int interval) {
     struct timeval wall_clock_before;
     struct timeval wall_clock_after;
     double wall_clock_delta;
+    struct tms times_before;
+    struct tms times_after;
+    double user_times_delta;
+    double sys_times_delta;
+
     if ((fd = open(filename, O_WRONLY|O_CREAT|O_TRUNC|O_SYNC, (mode_t) 0666)) == -1) {
         _errno = errno;
-        fprintf(stderr, "Unable to open %s : open(2) returned %d (%s)\n",
+            fprintf(stderr, "Unable to open %s : open(2) returned %d (%s)\n",
             filename,
             _errno,
             strerror(_errno));
         return 1;
     }
+    
     for (int iter = 0; iter < ITERATION_MAX; iter++) {
         printf("\nWriting sequence %d\n", iter);
         sprintf(str_buf, "%d\n", iter);
         str_len = strlen(str_buf);
         gettimeofday(&wall_clock_before, NULL);
+        times(&times_before);
         ws = write(fd, str_buf, str_len);
         _errno = errno;
+        times(&times_after);
         if ((ws == -1) || (ws != (ssize_t) str_len)) {
             fprintf(stderr, "write(2) returned %d (%s)\n",
-                filename,
                 _errno,
                 strerror(_errno));
         }
@@ -71,7 +85,14 @@ int line_writer(const char *filename, unsigned int interval) {
         wall_clock_delta = 
             ((double) wall_clock_after.tv_sec + ((double) wall_clock_after.tv_usec / 1000000)) -
             ((double) wall_clock_before.tv_sec + ((double) wall_clock_before.tv_usec / 1000000));
-        printf("write(2) took approx %.1lf seconds\n", wall_clock_delta);
+        user_times_delta =
+            ((double) (times_after.tms_utime - times_before.tms_utime) / sysconf(_SC_CLK_TCK));
+        sys_times_delta =
+            ((double) (times_after.tms_stime - times_before.tms_stime) / sysconf(_SC_CLK_TCK));
+        printf("write(2) took approx %.2lf seconds (user: %.2lf; sys: %.2lf)\n",
+            wall_clock_delta,
+            user_times_delta,
+            sys_times_delta);
         sleep(interval);
     }
     close(fd);
