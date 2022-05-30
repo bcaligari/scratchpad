@@ -53,7 +53,7 @@ int line_writer(const char *filename, unsigned int interval) {
         return 1;
     }
     for (int iter = 0; iter < ITERATION_MAX; iter++) {
-        printf("Writing sequence %d\n", iter);
+        printf("\nWriting sequence %d\n", iter);
         sprintf(str_buf, "%d\n", iter);
         str_len = strlen(str_buf);
         gettimeofday(&wall_clock_before, NULL);
