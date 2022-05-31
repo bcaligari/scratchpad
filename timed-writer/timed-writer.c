@@ -7,8 +7,8 @@
         https://www.gnu.org/licenses/agpl-3.0.en.html
 
     TODO:
-        - signal handling for termination
-        - configurable 
+        - signal handling for controlled termination
+        - configurable bailout (getopt rabbit hole)
 */
 
 #include <stdio.h>
@@ -37,6 +37,7 @@ void usage(char *progname) {
     printf("Usage: %s FILENAME [INTERVAL]\n", progname);
     printf("Writes a line to FILENAME every %d or [%d, %d] integral seconds\n",
         INTERVAL_DEFAULT,
+        INTERVAL_MIN,
         INTERVAL_MAX);
     printf("Example: %s /mnt/myfile.txt 10\n", progname);
     exit(0);
@@ -58,7 +59,7 @@ int line_writer(const char *filename, unsigned int interval) {
 
     if ((fd = open(filename, O_WRONLY|O_CREAT|O_TRUNC|O_SYNC, (mode_t) 0666)) == -1) {
         _errno = errno;
-            fprintf(stderr, "Unable to open %s : open(2) returned %d (%s)\n",
+        fprintf(stderr, "Unable to open %s : open(2) returned %d (%s)\n",
             filename,
             _errno,
             strerror(_errno));
@@ -101,6 +102,7 @@ int line_writer(const char *filename, unsigned int interval) {
 
 int main(int argc, char *argv[]) {
     long interval = (long) INTERVAL_DEFAULT;
+
     if ((argc == 1) || 
         (argc == 2) &&
         ((strcmp(argv[1], "-h") == 0) ||
