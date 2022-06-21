@@ -8,7 +8,7 @@
 
     TODO:
         - signal handling for controlled termination
-        - configurable bailout (getopt rabbit hole)
+        - cleanup code because this is embarrassing
 */
 
 #include <stdio.h>
@@ -18,32 +18,40 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/time.h>
+#include <sys/file.h>
 #include <sys/times.h>
 #include <limits.h>
 #include <time.h>
+#include <getopt.h>
 
 #define INTERVAL_DEFAULT    5
 #define INTERVAL_MIN        1
 #define INTERVAL_MAX        60*60
-#define ITERATION_MAX       666             // arbitrary safety bailout
+#define ITERATION_MAX       666
 #define BUF_MAX             1024
 
-void fail_bad_args(char *progname) {
-    fprintf(stderr, "%s: Invalid arguments\n", progname);
-    exit(1);
-}
 
 void usage(char *progname) {
-    printf("Usage: %s FILENAME [INTERVAL]\n", progname);
-    printf("Writes a line to FILENAME every %d or [%d, %d] integral seconds\n",
+    printf("Usage: %s [-i INTERVAL] [-c MAX_ITER] [-l] FILENAME\n", progname);
+    printf("       %s -h\n", progname);
+    printf("\n");
+    printf("Writes a line to FILENAME with SLEEP seconds between writes\n");
+    printf("\n");
+    printf("        -s SLEEP     : seconds sleep after each iteration (default: %d; bounds: [%d, %d])\n",
         INTERVAL_DEFAULT,
         INTERVAL_MIN,
         INTERVAL_MAX);
-    printf("Example: %s /mnt/myfile.txt 10\n", progname);
-    exit(0);
+    printf("        -c MAX_ITER  : limit iterations to MAX_ITER (default: %d)\n",
+        ITERATION_MAX);
+    printf("        -l           : place LOCK_EX on FILENAME\n");
+    printf("\n");
+    printf("Example: %s /mnt/myfile.txt\n", progname);
+    printf("         %s -i 5 -l /mnt/myexlusive.txt\n", progname);
+    printf("\n");
 }
 
-int line_writer(const char *filename, unsigned int interval) {
+
+int line_writer(const char *filename, unsigned int interval, int excl_lock, unsigned int iterations) {
     char str_buf[BUF_MAX];
     size_t str_len;
     ssize_t written, ws;
@@ -57,6 +65,11 @@ int line_writer(const char *filename, unsigned int interval) {
     double user_times_delta;
     double sys_times_delta;
 
+    printf("Filename: %s\n", filename);
+    printf("Exclusive lock: %s\n", excl_lock ? "on" : "off");
+    printf("Sleep after each write: %u\n", interval);
+    printf("Max iterations: %u\n", iterations);
+
     if ((fd = open(filename, O_WRONLY|O_CREAT|O_TRUNC|O_SYNC, (mode_t) 0666)) == -1) {
         _errno = errno;
         fprintf(stderr, "Unable to open %s : open(2) returned %d (%s)\n",
@@ -65,8 +78,19 @@ int line_writer(const char *filename, unsigned int interval) {
             strerror(_errno));
         return 1;
     }
+
+    if (excl_lock) {
+        if (flock(fd, LOCK_EX) == -1) {
+            _errno = errno;
+            fprintf(stderr, "Unable to place lock on %s : flock(2) returned %d (%s)\n",
+                filename,
+                _errno,
+                strerror(_errno));
+            return 1;
+        }
+    }
     
-    for (int iter = 0; iter < ITERATION_MAX; iter++) {
+    for (int iter = 0; iter < iterations; iter++) {
         printf("\nWriting sequence %d\n", iter);
         sprintf(str_buf, "%d\n", iter);
         str_len = strlen(str_buf);
@@ -81,7 +105,7 @@ int line_writer(const char *filename, unsigned int interval) {
                 strerror(_errno));
         }
         gettimeofday(&wall_clock_after, NULL);
-        if (ws != (ssize_t) str_len)
+        if ((ws != -1) && (ws != (ssize_t) str_len))
             printf("Wrote %d instead of %d!!\n", (int) ws, (int) str_len);
         wall_clock_delta = 
             ((double) wall_clock_after.tv_sec + ((double) wall_clock_after.tv_usec / 1000000)) -
@@ -100,24 +124,47 @@ int line_writer(const char *filename, unsigned int interval) {
     return 0;
 }
 
+
 int main(int argc, char *argv[]) {
     long interval = (long) INTERVAL_DEFAULT;
+    long iterations = (long) ITERATION_MAX;
+    int excl_lock = 0;
+    int opt;
 
-    if ((argc == 1) || 
-        (argc == 2) &&
-        ((strcmp(argv[1], "-h") == 0) ||
-         (strcmp(argv[1], "--help") == 0))) {
-             usage(argv[0]);
-         }
-    if (argc == 3) {
-        interval = atol(argv[2]);
-        if ((interval == 0) ||
-            (interval > (long) INTERVAL_MAX) ||
-            (interval < (long) INTERVAL_MIN))
-            fail_bad_args(argv[0]);
+    while ((opt = getopt(argc, argv, "s:c:lh")) != -1) {
+        switch(opt) {
+        case 'h':
+            usage(argv[0]);
+            exit(EXIT_SUCCESS);
+        case 's':                   // sleep time between iterations
+            interval = atol(optarg);
+            if ((interval == 0) ||
+                (interval > (long) INTERVAL_MAX) ||
+                (interval < (long) INTERVAL_MIN)) {
+                    fprintf(stderr, "Invalid sleep time: %s\n", optarg);
+                    exit(EXIT_FAILURE);
+                }
+            break;
+        case 'c':                   // maximum iterations
+            iterations = atol(optarg);
+            if ((iterations <= 0) ||
+                (interval > (long) ITERATION_MAX)) {
+                    fprintf(stderr, "Invalid max iterations: %s\n", optarg);
+                    exit(EXIT_FAILURE);
+                }
+            break;
+        case 'l':
+            excl_lock = 1;
+            break;
+        default:
+            fprintf(stderr, "Command line gibberish, try -h\n");
+            exit(EXIT_FAILURE);
+        }
     }
-    if (argc > 3)
-        fail_bad_args(argv[0]);
-    printf("Writing to %s with %lu second intervals\n", argv[0], interval);
-    line_writer(argv[1], (unsigned int) interval);
+    if (optind + 1 != argc) {
+        fprintf(stderr, "Expecting one, and only one, FILENAME\n");
+        exit(EXIT_FAILURE);
+    }
+
+    line_writer(argv[optind], (unsigned int) interval, excl_lock, (unsigned int) iterations);
 }
