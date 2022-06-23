@@ -32,7 +32,7 @@
 
 
 void usage(char *progname) {
-    printf("Usage: %s [-i INTERVAL] [-c MAX_ITER] [-l] FILENAME\n", progname);
+    printf("Usage: %s [-s SLEEP ] [-c MAX_ITER] [-l] FILENAME\n", progname);
     printf("       %s -h\n", progname);
     printf("\n");
     printf("Writes a line to FILENAME with SLEEP seconds between writes\n");
@@ -46,7 +46,7 @@ void usage(char *progname) {
     printf("        -l           : place LOCK_EX on FILENAME\n");
     printf("\n");
     printf("Example: %s /mnt/myfile.txt\n", progname);
-    printf("         %s -i 5 -l /mnt/myexlusive.txt\n", progname);
+    printf("         %s -s 5 -c 100 -l /mnt/myexlusive.txt\n", progname);
     printf("\n");
 }
 
