@@ -110,8 +110,9 @@ int line_writer(const char *filename,
         ws = write(fd, str_buf, str_len);
         _errno = errno;
         times(&times_after);
+        gettimeofday(&wall_clock_after, NULL);
         if (ws == -1) {
-            fprintf(stderr, "write() returned %d (%s)\n",
+            fprintf(stderr, "write() failed with errno %d (%s)\n",
                 _errno,
                 strerror(_errno));
             if (failmax > 0) {
@@ -123,7 +124,6 @@ int line_writer(const char *filename,
             }
         } else
             failures = 0;
-        gettimeofday(&wall_clock_after, NULL);
         if ((ws != -1) && (ws != (ssize_t) str_len))
             printf("write() returned %d instead of %d. Interrupted?!!\n", (int) ws, (int) str_len);
         wall_clock_delta = 
