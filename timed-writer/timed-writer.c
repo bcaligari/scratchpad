@@ -28,6 +28,8 @@
 #define INTERVAL_MIN        1
 #define INTERVAL_MAX        60*60
 #define ITERATION_MAX       666
+#define FAILURE_MAX         100
+#define FAILURE_DEFAULT     5
 #define BUF_MAX             1024
 
 
@@ -41,8 +43,11 @@ void usage(char *progname) {
         INTERVAL_DEFAULT,
         INTERVAL_MIN,
         INTERVAL_MAX);
-    printf("        -c MAX_ITER  : limit iterations to MAX_ITER (default: %d)\n",
+    printf("        -c MAX_ITER  : limit iterations to MAX_ITER (def: %d)\n",
         ITERATION_MAX);
+    printf("        -f MAX_FAIL  : limit consecutive write() failures to MAX_FAIL <= %d (def: %d; inf: 0)\n",
+        FAILURE_MAX,
+        FAILURE_DEFAULT);
     printf("        -l           : place LOCK_EX on FILENAME\n");
     printf("\n");
     printf("Example: %s /mnt/myfile.txt\n", progname);
@@ -51,12 +56,17 @@ void usage(char *progname) {
 }
 
 
-int line_writer(const char *filename, unsigned int interval, int excl_lock, unsigned int iterations) {
+int line_writer(const char *filename,
+                unsigned int interval,
+                int excl_lock,
+                unsigned int iterations,
+                unsigned int failmax) {
     char str_buf[BUF_MAX];
     size_t str_len;
     ssize_t written, ws;
     int _errno;
     int fd;
+    unsigned int failures = 0;
     struct timeval wall_clock_before;
     struct timeval wall_clock_after;
     double wall_clock_delta;
@@ -69,10 +79,11 @@ int line_writer(const char *filename, unsigned int interval, int excl_lock, unsi
     printf("Exclusive lock: %s\n", excl_lock ? "on" : "off");
     printf("Sleep after each write: %u\n", interval);
     printf("Max iterations: %u\n", iterations);
+    printf("Max consecutive write fails: %u\n", failmax);
 
     if ((fd = open(filename, O_WRONLY|O_CREAT|O_TRUNC|O_SYNC, (mode_t) 0666)) == -1) {
         _errno = errno;
-        fprintf(stderr, "Unable to open %s : open(2) returned %d (%s)\n",
+        fprintf(stderr, "Unable to open %s : open() returned %d (%s)\n",
             filename,
             _errno,
             strerror(_errno));
@@ -82,7 +93,7 @@ int line_writer(const char *filename, unsigned int interval, int excl_lock, unsi
     if (excl_lock) {
         if (flock(fd, LOCK_EX) == -1) {
             _errno = errno;
-            fprintf(stderr, "Unable to place lock on %s : flock(2) returned %d (%s)\n",
+            fprintf(stderr, "Unable to place lock on %s : flock() returned %d (%s)\n",
                 filename,
                 _errno,
                 strerror(_errno));
@@ -99,14 +110,22 @@ int line_writer(const char *filename, unsigned int interval, int excl_lock, unsi
         ws = write(fd, str_buf, str_len);
         _errno = errno;
         times(&times_after);
-        if ((ws == -1) || (ws != (ssize_t) str_len)) {
-            fprintf(stderr, "write(2) returned %d (%s)\n",
+        if (ws == -1) {
+            fprintf(stderr, "write() returned %d (%s)\n",
                 _errno,
                 strerror(_errno));
-        }
+            if (failmax > 0) {
+                failures++;
+                if (failures == failmax) {
+                    fprintf(stderr, "Reached max failcount ... bye!\n");
+                    exit(EXIT_FAILURE);
+                }
+            }
+        } else
+            failures = 0;
         gettimeofday(&wall_clock_after, NULL);
         if ((ws != -1) && (ws != (ssize_t) str_len))
-            printf("Wrote %d instead of %d!!\n", (int) ws, (int) str_len);
+            printf("write() returned %d instead of %d. Interrupted?!!\n", (int) ws, (int) str_len);
         wall_clock_delta = 
             ((double) wall_clock_after.tv_sec + ((double) wall_clock_after.tv_usec / 1000000)) -
             ((double) wall_clock_before.tv_sec + ((double) wall_clock_before.tv_usec / 1000000));
@@ -114,7 +133,7 @@ int line_writer(const char *filename, unsigned int interval, int excl_lock, unsi
             ((double) (times_after.tms_utime - times_before.tms_utime) / sysconf(_SC_CLK_TCK));
         sys_times_delta =
             ((double) (times_after.tms_stime - times_before.tms_stime) / sysconf(_SC_CLK_TCK));
-        printf("write(2) took approx %.2lf seconds (user: %.2lf; sys: %.2lf)\n",
+        printf("write() took approx %.2lf seconds (user: %.2lf; sys: %.2lf)\n",
             wall_clock_delta,
             user_times_delta,
             sys_times_delta);
@@ -128,10 +147,11 @@ int line_writer(const char *filename, unsigned int interval, int excl_lock, unsi
 int main(int argc, char *argv[]) {
     long interval = (long) INTERVAL_DEFAULT;
     long iterations = (long) ITERATION_MAX;
+    long failmax = (long) FAILURE_DEFAULT;
     int excl_lock = 0;
     int opt;
 
-    while ((opt = getopt(argc, argv, "s:c:lh")) != -1) {
+    while ((opt = getopt(argc, argv, "s:c:f:lh")) != -1) {
         switch(opt) {
         case 'h':
             usage(argv[0]);
@@ -153,6 +173,14 @@ int main(int argc, char *argv[]) {
                     exit(EXIT_FAILURE);
                 }
             break;
+        case 'f':                   // maximum iterations
+            failmax = atol(optarg);
+            if ((failmax < 0) ||
+                (failmax > (long) FAILURE_MAX)) {
+                    fprintf(stderr, "Invalid max failures: %s\n", optarg);
+                    exit(EXIT_FAILURE);
+                }
+            break;
         case 'l':
             excl_lock = 1;
             break;
@@ -166,5 +194,9 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    line_writer(argv[optind], (unsigned int) interval, excl_lock, (unsigned int) iterations);
+    line_writer(argv[optind],
+                (unsigned int) interval,
+                excl_lock,
+                (unsigned int) iterations,
+                (unsigned int) failmax);
 }
