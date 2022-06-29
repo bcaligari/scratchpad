@@ -173,11 +173,11 @@ int main(int argc, char *argv[]) {
                     exit(EXIT_FAILURE);
                 }
             break;
-        case 'f':                   // maximum iterations
+        case 'f':                   // maximum consecutive write fails
             failmax = atol(optarg);
             if ((failmax < 0) ||
                 (failmax > (long) FAILURE_MAX)) {
-                    fprintf(stderr, "Invalid max failures: %s\n", optarg);
+                    fprintf(stderr, "Invalid max consecutive write failures: %s\n", optarg);
                     exit(EXIT_FAILURE);
                 }
             break;
