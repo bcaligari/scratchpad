@@ -1,5 +1,5 @@
 /*
-    timed-writer : writes an line to a file every so many seconds
+    timed-writer : writes a block to a file every so many seconds
 
     Copyright (C) 2022 Brendon Caligari <caligari@cypraea.co.uk>
 
@@ -153,7 +153,10 @@ int line_writer(const char *filename,
             sys_times_delta);
         sleep(interval);
     }
+
     close(fd);
+    free(write_buf);
+
     return 0;
 }
 
@@ -223,4 +226,6 @@ int main(int argc, char *argv[]) {
                 (int) iterations,
                 (int) failmax,
                 (int) blocksize);
+
+    return 0;
 }
