@@ -30,7 +30,8 @@
 #define ITERATION_MAX       666
 #define FAILURE_MAX         100
 #define FAILURE_DEFAULT     5
-#define BUF_MAX             1024
+#define BS_DEF              1024
+#define BS_MAX              1024 * 1024 * 32
 
 
 void usage(char *progname) {
@@ -39,16 +40,18 @@ void usage(char *progname) {
     printf("\n");
     printf("Writes a line to FILENAME with SLEEP seconds between writes\n");
     printf("\n");
-    printf("        -s SLEEP     : seconds sleep after each iteration (default: %d; bounds: [%d, %d])\n",
+    printf("        -s SLEEP      : seconds sleep after each iteration (default: %d; bounds: [%d, %d])\n",
         INTERVAL_DEFAULT,
         INTERVAL_MIN,
         INTERVAL_MAX);
-    printf("        -c MAX_ITER  : limit iterations to MAX_ITER (def: %d)\n",
+    printf("        -c MAX_ITER   : limit iterations to MAX_ITER (def: %d)\n",
         ITERATION_MAX);
-    printf("        -f MAX_FAIL  : limit consecutive write() failures to MAX_FAIL <= %d (def: %d; inf: 0)\n",
+    printf("        -f MAX_FAIL   : limit consecutive write() failures to MAX_FAIL <= %d (def: %d; inf: 0)\n",
         FAILURE_MAX,
         FAILURE_DEFAULT);
-    printf("        -l           : place LOCK_EX on FILENAME\n");
+    printf("        -b BLOCK_SIZE : set write() size to BLOCK_SIZE <= %d (def: 0)\n", BS_MAX);
+    printf("                        0 writes iteration's \"%%d\\n\"\n");
+    printf("        -l            : place LOCK_EX on FILENAME\n");
     printf("\n");
     printf("Example: %s /mnt/myfile.txt\n", progname);
     printf("         %s -s 5 -c 100 -l /mnt/myexlusive.txt\n", progname);
@@ -57,16 +60,19 @@ void usage(char *progname) {
 
 
 int line_writer(const char *filename,
-                unsigned int interval,
+                int interval,
                 int excl_lock,
-                unsigned int iterations,
-                unsigned int failmax) {
-    char str_buf[BUF_MAX];
-    size_t str_len;
-    ssize_t written, ws;
+                int iterations,
+                int failmax,
+                int blocksize) {
+    char str_buf[BS_DEF];
+    void *write_buf;
+    size_t write_buf_size;
+    size_t str_len, write_actual;
+    ssize_t ws;
     int _errno;
     int fd;
-    unsigned int failures = 0;
+    int failures = 0;
     struct timeval wall_clock_before;
     struct timeval wall_clock_after;
     double wall_clock_delta;
@@ -75,11 +81,17 @@ int line_writer(const char *filename,
     double user_times_delta;
     double sys_times_delta;
 
+    write_buf_size = blocksize > BS_DEF ? (size_t) blocksize : (size_t) BS_DEF;
+
     printf("Filename: %s\n", filename);
     printf("Exclusive lock: %s\n", excl_lock ? "on" : "off");
     printf("Sleep after each write: %u\n", interval);
     printf("Max iterations: %u\n", iterations);
     printf("Max consecutive write fails: %u\n", failmax);
+    printf("Write size: %u\n", blocksize);
+
+    write_buf = malloc(write_buf_size);
+    memset(write_buf, '\r', write_buf_size);
 
     if ((fd = open(filename, O_WRONLY|O_CREAT|O_TRUNC|O_SYNC, (mode_t) 0666)) == -1) {
         _errno = errno;
@@ -104,10 +116,12 @@ int line_writer(const char *filename,
     for (int iter = 0; iter < iterations; iter++) {
         printf("\nWriting sequence %d\n", iter);
         sprintf(str_buf, "%d\n", iter);
+        strcpy((char *) write_buf, str_buf);
         str_len = strlen(str_buf);
+        write_actual = blocksize ? (size_t) blocksize : str_len;
         gettimeofday(&wall_clock_before, NULL);
         times(&times_before);
-        ws = write(fd, str_buf, str_len);
+        ws = write(fd, write_buf, write_actual);
         _errno = errno;
         times(&times_after);
         gettimeofday(&wall_clock_after, NULL);
@@ -124,8 +138,8 @@ int line_writer(const char *filename,
             }
         } else
             failures = 0;
-        if ((ws != -1) && (ws != (ssize_t) str_len))
-            printf("write() returned %d instead of %d. Interrupted?!!\n", (int) ws, (int) str_len);
+        if ((ws != -1) && (ws != (ssize_t) write_actual))
+            printf("write() returned %d instead of %d. Interrupted?!!\n", (int) ws, (int) write_actual);
         wall_clock_delta = 
             ((double) wall_clock_after.tv_sec + ((double) wall_clock_after.tv_usec / 1000000)) -
             ((double) wall_clock_before.tv_sec + ((double) wall_clock_before.tv_usec / 1000000));
@@ -149,9 +163,10 @@ int main(int argc, char *argv[]) {
     long iterations = (long) ITERATION_MAX;
     long failmax = (long) FAILURE_DEFAULT;
     int excl_lock = 0;
+    int blocksize = 0;
     int opt;
 
-    while ((opt = getopt(argc, argv, "s:c:f:lh")) != -1) {
+    while ((opt = getopt(argc, argv, "s:c:b:f:lh")) != -1) {
         switch(opt) {
         case 'h':
             usage(argv[0]);
@@ -181,6 +196,14 @@ int main(int argc, char *argv[]) {
                     exit(EXIT_FAILURE);
                 }
             break;
+        case 'b':                   // maximum consecutive write fails
+            blocksize = atol(optarg);
+            if ((failmax < 0) ||
+                (failmax > (long) BS_MAX)) {
+                    fprintf(stderr, "Invalid write block size: %s\n", optarg);
+                    exit(EXIT_FAILURE);
+                }
+            break;
         case 'l':
             excl_lock = 1;
             break;
@@ -195,8 +218,9 @@ int main(int argc, char *argv[]) {
     }
 
     line_writer(argv[optind],
-                (unsigned int) interval,
+                (int) interval,
                 excl_lock,
-                (unsigned int) iterations,
-                (unsigned int) failmax);
+                (int) iterations,
+                (int) failmax,
+                (int) blocksize);
 }
