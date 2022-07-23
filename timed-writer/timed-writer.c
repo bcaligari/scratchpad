@@ -196,7 +196,7 @@ int main(int argc, char *argv[]) {
                     exit(EXIT_FAILURE);
                 }
             break;
-        case 'b':                   // maximum consecutive write fails
+        case 'b':                   // block size to write, 0 = write iteration string
             blocksize = atol(optarg);
             if ((failmax < 0) ||
                 (failmax > (long) BS_MAX)) {
