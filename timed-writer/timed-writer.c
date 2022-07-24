@@ -35,7 +35,7 @@
 
 
 void usage(char *progname) {
-    printf("Usage: %s [-s SLEEP ] [-c MAX_ITER] [-l] FILENAME\n", progname);
+    printf("Usage: %s [-s SLEEP ] [-c MAX_ITER] [-f MAX_FAIL] [-b BLOCK_SIZE] [-l] FILENAME\n", progname);
     printf("       %s -h\n", progname);
     printf("\n");
     printf("Writes a line to FILENAME with SLEEP seconds between writes\n");
@@ -55,6 +55,7 @@ void usage(char *progname) {
     printf("\n");
     printf("Example: %s /mnt/myfile.txt\n", progname);
     printf("         %s -s 5 -c 100 -l /mnt/myexlusive.txt\n", progname);
+    printf("         %s -s 1 -c 10 -f 2 -b $((1024*1024)) -l /mnt/megwrite.txt\n", progname);
     printf("\n");
 }
 
@@ -114,11 +115,11 @@ int line_writer(const char *filename,
     }
     
     for (int iter = 0; iter < iterations; iter++) {
-        printf("\nWriting sequence %d\n", iter);
         sprintf(str_buf, "%d\n", iter);
         strcpy((char *) write_buf, str_buf);
         str_len = strlen(str_buf);
         write_actual = blocksize ? (size_t) blocksize : str_len;
+        printf("\nWriting sequence %d (%d bytes)\n", iter, write_actual);
         gettimeofday(&wall_clock_before, NULL);
         times(&times_before);
         ws = write(fd, write_buf, write_actual);
