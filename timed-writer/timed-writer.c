@@ -34,7 +34,8 @@
 #define BS_MAX              1024 * 1024 * 32
 
 
-void usage(char *progname) {
+void usage(char *progname)
+{
     printf("Usage: %s [-s SLEEP ] [-c MAX_ITER] [-f MAX_FAIL] [-b BLOCK_SIZE] [-l] FILENAME\n", progname);
     printf("       %s -h\n", progname);
     printf("\n");
@@ -65,7 +66,8 @@ int line_writer(const char *filename,
                 int excl_lock,
                 int iterations,
                 int failmax,
-                int blocksize) {
+                int blocksize)
+{
     char str_buf[BS_DEF];
     void *write_buf;
     size_t write_buf_size;
@@ -114,7 +116,7 @@ int line_writer(const char *filename,
         }
     }
     
-    for (int iter = 0; iter < iterations; iter++) {
+    for (int iter = 0; iter < iterations;) {
         sprintf(str_buf, "%d\n", iter);
         strcpy((char *) write_buf, str_buf);
         str_len = strlen(str_buf);
@@ -152,7 +154,8 @@ int line_writer(const char *filename,
             wall_clock_delta,
             user_times_delta,
             sys_times_delta);
-        sleep(interval);
+        if (++iter < iterations)
+            sleep(interval);
     }
 
     close(fd);
@@ -162,7 +165,8 @@ int line_writer(const char *filename,
 }
 
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
     long interval = (long) INTERVAL_DEFAULT;
     long iterations = (long) ITERATION_MAX;
     long failmax = (long) FAILURE_DEFAULT;
@@ -175,6 +179,7 @@ int main(int argc, char *argv[]) {
         case 'h':
             usage(argv[0]);
             exit(EXIT_SUCCESS);
+            break;
         case 's':                   // sleep time between iterations
             interval = atol(optarg);
             if ((interval == 0) ||
@@ -187,7 +192,7 @@ int main(int argc, char *argv[]) {
         case 'c':                   // maximum iterations
             iterations = atol(optarg);
             if ((iterations <= 0) ||
-                (interval > (long) ITERATION_MAX)) {
+                (iterations > (long) ITERATION_MAX)) {
                     fprintf(stderr, "Invalid max iterations: %s\n", optarg);
                     exit(EXIT_FAILURE);
                 }
@@ -202,8 +207,8 @@ int main(int argc, char *argv[]) {
             break;
         case 'b':                   // block size to write, 0 = write iteration string
             blocksize = atol(optarg);
-            if ((failmax < 0) ||
-                (failmax > (long) BS_MAX)) {
+            if ((blocksize < 0) ||
+                (blocksize > (long) BS_MAX)) {
                     fprintf(stderr, "Invalid write block size: %s\n", optarg);
                     exit(EXIT_FAILURE);
                 }
@@ -214,6 +219,7 @@ int main(int argc, char *argv[]) {
         default:
             fprintf(stderr, "Command line gibberish, try -h\n");
             exit(EXIT_FAILURE);
+            break;
         }
     }
     if (optind + 1 != argc) {
